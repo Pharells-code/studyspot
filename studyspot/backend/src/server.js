@@ -1,10 +1,10 @@
-// server.js - starts the StudySpot web server (REST API + the built web pages).
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const PDFDocument = require('pdfkit'); // Added PDFKit here at the top
 
 const { pool } = require('./db');
 const { errorHandler, HttpError } = require('./utils/http');
@@ -29,8 +29,68 @@ app.use('/api/admin', requireAuth, requireAdmin,
   require('./routes/adminRooms'),
   require('./routes/adminUsers'),
   require('./routes/adminBookings'),
-  require('./routes/adminReports'));
+  require('./routes/adminReports')
+);
 
+// ---- PDF Report Route ----------------------------------------------------
+app.get('/api/reports/bookings', async (req, res) => {
+    // 1. Capture filtering/sorting parameters from the frontend
+    const { status, sortOrder = 'DESC' } = req.query; 
+    
+    // 2. Query the database using prepared statements for security
+    let sql = 'SELECT * FROM bookings';
+    const queryParams = [];
+    
+    if (status) {
+        sql += ' WHERE status = ?';
+        queryParams.push(status);
+    }
+    sql += ` ORDER BY booking_date ${sortOrder === 'ASC' ? 'ASC' : 'DESC'}`;
+
+    try {
+        // Use the existing 'pool' import to query the database
+        const [bookings] = await pool.query(sql, queryParams);
+        
+        // 3. Initialize the PDF Document
+        const doc = new PDFDocument();
+        
+        // Set the response headers to trigger a file download in the browser
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=StudySpot_Report.pdf');
+        doc.pipe(res);
+
+        // 4. Add Company Logo & Name (Ensure logo.png is in your backend folder!)
+        doc.image('logo.jpg', 50, 45, { width: 50 });
+        doc.fontSize(20).text('StudySpot Inc.', 110, 57);
+        
+        // 5. Add the Current Date
+        const currentDate = new Date().toLocaleDateString();
+        doc.fontSize(12).text(`Generated on: ${currentDate}`, 110, 80);
+        
+        doc.moveDown(3);
+        doc.fontSize(16).text('Booking Report', { underline: true });
+        doc.moveDown();
+
+        // 6. Output the filtered data
+        if (bookings.length === 0) {
+            doc.fontSize(12).text('No bookings found for the selected filters.');
+        } else {
+            bookings.forEach(b => {
+                doc.fontSize(10).text(`Booking ID: ${b.booking_id} | Date: ${b.booking_date} | Status: ${b.status}`);
+                doc.moveDown(0.5);
+            });
+        }
+
+        // Finalize the PDF
+        doc.end();
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to generate report' });
+    }
+});
+
+// 404 Catch-all handler must come AFTER the reporting route
 app.use('/api', (req, res, next) => next(new HttpError(404, 'That API address does not exist.')));
 
 // ---- Serve the built front-end (after `npm run build` in /frontend) -------

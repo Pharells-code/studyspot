@@ -71,10 +71,19 @@ export default function Reports() {
   const roomName = report && report.filters.room_id ? (rooms.find((r) => r.room_id === report.filters.room_id) || {}).room_name : null;
   const generated = report && new Date(report.generated_at);
 
+  const downloadReport = () => {
+    const filterStatus = "completed"; // Adjust this based on your UI later if needed
+    window.open(`http://localhost:5000/api/reports/bookings?status=${filterStatus}`, '_blank');
+};
+
   return (
     <>
       <div className="no-print">
         <PageHeader title="Reports" icon="fa-chart-column" subtitle="Generate, print or export usage reports." />
+
+        <button onClick={downloadReport} className="btn btn-primary">
+    Download PDF Report
+</button>
 
         <form className="card card-body mb-4" onSubmit={(e) => { e.preventDefault(); generate(); }} noValidate>
           <div className="row g-2">
